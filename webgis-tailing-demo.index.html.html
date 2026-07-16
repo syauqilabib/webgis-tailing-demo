@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>WebGIS Pemantauan Tailing - Demo</title>
+
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: Arial, sans-serif; }
+  #map { height: 100vh; width: 100%; }
+
+  /* Styling untuk isi popup titik tailing */
+  .popup-tailing { min-width: 220px; }
+  .popup-tailing h3 { margin: 0 0 6px 0; font-size: 15px; color: #b5432c; }
+  .popup-tailing table { width: 100%; font-size: 12.5px; border-collapse: collapse; }
+  .popup-tailing td { padding: 2px 4px; vertical-align: top; }
+  .popup-tailing td.label { color: #555; width: 40%; }
+  .popup-tailing img {
+    width: 100%; max-height: 120px; object-fit: cover;
+    border-radius: 4px; margin-top: 6px;
+  }
+
+  /* Legend sederhana */
+  .legend {
+    background: white; padding: 8px 12px; border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-size: 13px;
+  }
+  .legend span {
+    display: inline-block; width: 10px; height: 10px;
+    border-radius: 50%; margin-right: 6px;
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+// =====================================================
+// 1. INISIALISASI PETA
+// =====================================================
+// Ganti koordinat ini dengan koordinat tengah area tambang/tailing kamu
+const map = L.map('map').setView([-2.878668008088977, 122.09201782999857], 14); // contoh: tengah Indonesia, ganti sesuai lokasi
+
+// =====================================================
+// 2. BASE LAYER (sementara pakai OSM, nanti orthophoto kamu bisa jadi layer terpisah)
+// =====================================================
+const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
+  maxZoom: 22
+}).addTo(map);
+
+// =====================================================
+// 3. LAYER ORTHOPHOTO (contoh setelah kamu tiling pakai gdal2tiles.py)
+// =====================================================
+// Setelah orthophoto di-tile, kamu akan punya folder z/x/y.png
+// Uncomment & sesuaikan path setelah tiling selesai:
+//
+// const orthophoto = L.tileLayer('tiles/orthophoto/{z}/{x}/{y}.png', {
+//   maxZoom: 22,
+//   maxNativeZoom: 19, // sesuaikan dengan zoom maksimal hasil tiling
+//   attribution: 'Orthophoto Survey 2026'
+// });
+//
+// Kalau area kecil dan orthophoto belum di-tile, bisa juga pakai ImageOverlay:
+// const imageBounds = [[-2.51, 117.99], [-2.49, 118.01]]; // [SW, NE] koordinat sudut foto
+// const orthophoto = L.imageOverlay('orthophoto.png', imageBounds);
+
+// =====================================================
+// 4. DATA TITIK PEMANTAUAN TAILING
+// =====================================================
+// Idealnya ini di-load dari file GeoJSON terpisah (fetch), bukan hardcode.
+// Contoh struktur data per titik:
+const dataTailing = [
+  {
+    id: "TL-01",
+    nama: "Titik Tailing 01 - Kolam A",
+    lat: -2.858481860169982,
+    lon: 122.14425680344748,
+    elevasi: 145.3,      // meter dpl
+    ketinggian: 3.2,      // meter, ketinggian timbunan
+    tanggal: "2026-06-15",
+    foto: "foto-tailing/TL-01.jpg",
+    catatan: "Kondisi stabil, tidak ada rembesan"
+  },
+  {
+    id: "TL-02",
+    nama: "Titik Tailing 02 - Kolam B",
+    lat: -2.8624825056084577,
+    lon: 122.14601685580648,
+    elevasi: 148.7,
+    ketinggian: 4.8,
+    tanggal: "2026-06-15",
+    foto: "https://placehold.co/300x180?text=Foto+TL-02",
+    catatan: "Perlu pemantauan lanjut, retakan minor"
+  },
+  {
+    id: "TL-03",
+    nama: "Titik Tailing 03 - Kolam C",
+    lat: -2.8615126534506836,
+    lon: 122.14204156513357,
+    elevasi: 142.1,
+    ketinggian: 2.5,
+    tanggal: "2026-06-14",
+    foto: "https://placehold.co/300x180?text=Foto+TL-03",
+    catatan: "Kondisi normal"
+  }
+];
+
+// =====================================================
+// 5. FUNGSI UNTUK MENENTUKAN WARNA MARKER (contoh: berdasarkan ketinggian timbunan)
+// =====================================================
+function getColor(ketinggian) {
+  if (ketinggian >= 4) return "#d73027";   // merah - perlu perhatian
+  if (ketinggian >= 3) return "#fee08b";   // kuning - waspada
+  return "#1a9850";                         // hijau - aman
+}
+
+// =====================================================
+// 6. BUAT MARKER + POPUP UNTUK TIAP TITIK
+// =====================================================
+const markerGroup = L.layerGroup();
+
+dataTailing.forEach(titik => {
+  const marker = L.circleMarker([titik.lat, titik.lon], {
+    radius: 9,
+    fillColor: getColor(titik.ketinggian),
+    color: "#333",
+    weight: 1.5,
+    fillOpacity: 0.9
+  });
+
+  const popupContent = `
+    <div class="popup-tailing">
+      <h3>${titik.nama}</h3>
+      <table>
+        <tr><td class="label">ID Titik</td><td>: ${titik.id}</td></tr>
+        <tr><td class="label">Elevasi</td><td>: ${titik.elevasi} m dpl</td></tr>
+        <tr><td class="label">Ketinggian Timbunan</td><td>: ${titik.ketinggian} m</td></tr>
+        <tr><td class="label">Tgl Pemantauan</td><td>: ${titik.tanggal}</td></tr>
+        <tr><td class="label">Catatan</td><td>: ${titik.catatan}</td></tr>
+      </table>
+      <img src="${titik.foto}" alt="Foto ${titik.id}">
+    </div>
+  `;
+
+  marker.bindPopup(popupContent);
+  marker.addTo(markerGroup);
+});
+
+markerGroup.addTo(map);
+
+// =====================================================
+// 7. LAYER CONTROL (toggle base layer / orthophoto / titik)
+// =====================================================
+const baseLayers = {
+  "OpenStreetMap": osm
+  // "Orthophoto": orthophoto  // aktifkan setelah orthophoto siap
+};
+const overlayLayers = {
+  "Titik Pemantauan Tailing": markerGroup
+};
+L.control.layers(baseLayers, overlayLayers).addTo(map);
+
+// =====================================================
+// 8. LEGEND
+// =====================================================
+const legend = L.control({ position: 'bottomright' });
+legend.onAdd = function () {
+  const div = L.DomUtil.create('div', 'legend');
+  div.innerHTML = `
+    <b>Ketinggian Timbunan</b><br>
+    <span style="background:#1a9850"></span> &lt; 3 m<br>
+    <span style="background:#fee08b"></span> 3 - 4 m<br>
+    <span style="background:#d73027"></span> &gt; 4 m
+  `;
+  return div;
+};
+legend.addTo(map);
+
+</script>
+</body>
+</html>
